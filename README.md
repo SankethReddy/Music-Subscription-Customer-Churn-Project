@@ -12,5 +12,5 @@ R was used to perform data cleansing, exploratory data analysis, and data prepro
 R was used to develop a Logistic Regression model, a Decision Tree Classification model, and a Random Forest
 Classification model to predict the customer churn.
 
-Datasets source from Kaggle:     
+Link to the datasets from Kaggle:     
 https://www.kaggle.com/c/kkbox-churn-prediction-challenge/data
