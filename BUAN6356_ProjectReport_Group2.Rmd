@@ -1,0 +1,641 @@
+---
+title: "KKBox's Churn Prediction Report"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE,
+                      message = FALSE)
+```
+
+## Group 2 (Names):
+
+Dhruva Kumar Kadiyala (dxk190028), Sanketh Reddy (spr150430), Madhuri Thorat (mxt200018), I-Ching Wang (ixw200000)
+
+## I. Introduction 
+ 
+KKBox is one of the most popular music streaming services in Asia with several subscription options to attract customers. Nowadays, companies are increasingly aware of the importance of subscription services, and the churn rate is a critical indicator to track the health of a subscription-based company. To be more precise, the company can take measures in advance by predicting the customer churn rate to retain customers consistently. Therefore, our goal is to help KKBox predict whether a subscriber will churn after his/her subscription expires.
+
+## II. Data Description
+ 
+We obtained the data set from the Kaggle website (WSDM - KKBox's Churn Prediction Challenge). The datasets are composed of a user information dataset, transactions dataset, daily listening behaviors of a user dataset, and a training dataset. The datasets contain information from 6,769,473 users and include details about age, city, gender, churn data, payment method, length of membership plan in days, the number of songs played, etc. Our target variable is churn, and churn is defined as whether the user did not continue the subscription within 30 days of when his/her subscription expired. 
+
+Since the daily listening behaviors dataset reports daily metrics for each unique user, the original dataset contained duplicate values for the customer id column. To fix this duplicate customer id dilemma, we decided to group each unique customer id and get the sum of all of the column values for each unique customer id. This new and aggregate dataset contains all of the same information as before and gets rid of the duplicate customer id dilemma because each unique customer id is present only once. 
+
+To create the one dataset we used for our EDA, we joined the training dataset that kaggle provided to us and joined it with the users’ information dataset, transactions dataset, and the new and aggregate users’ listening behaviors dataset. Each dataset had the ‘msno column’ (customer id) and we joined each of the datasets by this column. The resulting dataset comprises of 22 variables and 725,722 observations.
+
+The new dataset contains the following variables:
+
+* msno: user id
+* num_25: the total amount of instances each unique user listened to less than 25% percent of songs
+* num_50: the total amount of instances each unique user listened to between 25%-50% of songs
+* num_75: the total amount of instances each unique user listened to between 50%-75% of songs
+* num_985: the total amount of instances each unique user listened to between 75%-98.5% of songs
+* num_100: the total amount of instances each unique user listened to between 98.5%-100% of songs
+* num_unq: the total amount of unique songs each unique user listened to songs
+* total_secs: the total amount of seconds each unique user spent on listening to songs
+* payment_method_id: payment method (33 Levels: 3 6 8 10 11 12 13 14 15 16 17 18 19 20 21 22 23 26 27 ... 41)**
+* payment_plan_days: length of membership plan in days
+* plan_list_price: payment of membership plan in New Taiwan Dollar (NTD)
+* actual_amount_paid: actual payment of membership in New Taiwan Dollar (NTD)
+* is_auto_renew: whether the membership plan is auto renew or not (1, 0)
+* transaction_date: transaction date (%Y%m%d)
+* membership_expire_date: membership expiry date (%Y%m%d)
+* is_cancel: whether the customer canceled the membership in this transaction or not (1, 0)
+* city: city that customer lives (Levels: 1 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 )***
+* bd: customer age (years)
+* gender: customer gender (male, female)
+* registered_via: registration method (Levels: 3 4 7 9 13)****
+* registration_init_time: initial registration date (%Y%m%d)
+* is_churn: whether the customer churned or not (1, 0)
+
+**: Kaggle did not provide what each Payment Method id number actually refers to
+
+***: Kaggle did not provide what each City number actually refers to
+
+****: Kaggle did not provide what each Registration Method number actually refers to
+
+## III. Goal
+ 
+The main issue that we are trying to resolve is figuring out the main and significant factors that are leading to customers churning. If we are able to figure out what these factors are, we can help KKBox reach out to certain customers to try and prevent them from churning after their subscription expires. 
+
+## IV. Exploratory Data Analysis (EDA)
+
+```{r install package}
+## Installing and Loading Packages
+if(!require("pacman")) install.packages("pacman")
+library(knitr)
+pacman::p_load(data.table, ggplot2, dplyr, plotly, psych, lubridate, 
+               devtools, gridExtra, GGally, corrplot, gplots, cowplot,
+               gapminder, patchwork, tidyverse, fastDummies, ROSE, 
+               reshape, ggmap, mlbench, factoextra, car, reshape, MASS, 
+               gains, caret, MLmetrics, InformationValue, broom, rpart, pROC, 
+               leaps, ISLR, MASS, rpart, rpart.plot,
+               randomForest, gbm, tree)
+```
+
+
+```{r load dataset}
+## Loading kkbox dataset
+# use fread() to read big data
+members.df <- fread("members_v3.csv")
+transaction.df <- fread("transactions_v2.csv")
+user_logs_aggregate.df  <- fread('user_logs_aggregate.csv')
+df <- fread("train_v2.csv")
+```
+
+```{r table merge dataset}
+## Merge dataset with the same msno(user id)
+#1. In the new training data set, we find that the column 'msno' is not needed.
+#2. There are 725,722 observations in this new training data set.
+kkbox.df1 <- inner_join(members.df, user_logs_aggregate.df, by="msno", all = FALSE)
+kkbox.df1 <- kkbox.df1[!duplicated(kkbox.df1$msno),]
+kkbox.df2 <- inner_join(transaction.df, df, by="msno", all = FALSE)
+kkbox.df2 <- kkbox.df2[!duplicated(kkbox.df2$msno),]
+kkbox.df.orig <- inner_join(kkbox.df1, kkbox.df2, by="msno", all = FALSE)
+kkbox.df.orig <- kkbox.df.orig[!duplicated(kkbox.df.orig$msno),]
+remove(kkbox.df1)
+remove(kkbox.df2)
+remove(df)
+```
+
+```{r table dataset reduction}
+### Reshape Dataset
+#1. Drop the the unneeded column 'msno'.
+# drop the column msno
+kkbox.df <- kkbox.df.orig[,-1]
+```
+
+This is an imbalanced dataset. The plot and table below show that the customer churn rate in KKBox is low. The churn rate is approximately only 6% whereas the non-churn rate is approximately 94%.
+
+```{r table churn}
+# churn rate group by churn
+p1 <- kkbox.df %>%
+  mutate(churn = as.factor(is_churn)) %>%
+  ggplot(aes(x = churn, fill = churn)) + 
+  geom_bar() + 
+  xlab('churn') + ylab('count') + 
+  ggtitle('Churn vs. Non-Churn') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+t1 <- round(table(kkbox.df$is_churn)/nrow(kkbox.df),3)
+
+p1
+t1
+```
+
+From the plots below, we can find two things. First, city 1* has the most number of users who did not churn. Second, the column gender has a lot of **missing values**. Users who did not churn seem more likely to leave their gender empty. On the other hand, without considering missing values, female users churned slightly more than male users, but the numbers are really similar.
+
+-* Note: As mentioned above in section "II. Data Description", Kaggle did not provide what each City number actually refers to  
+
+```{r city, gender}
+# city group by churn
+p2 <- kkbox.df %>%
+  mutate(churn = as.factor(is_churn)) %>%
+  ggplot(aes(x = city, fill = churn)) + 
+  geom_histogram() + 
+  facet_wrap(~is_churn) + 
+  xlab('city') + ylab('count') +
+  ggtitle('Churn vs. City') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+p3 <- kkbox.df %>%
+  mutate(churn = as.factor(is_churn)) %>%
+  ggplot(aes(x = gender, fill = churn)) + 
+  geom_bar() + 
+  facet_wrap(~is_churn) +
+  xlab('gender') + ylab('count') +
+  ggtitle('Churn vs. Gender') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+p2/p3
+```
+
+The box plots below show the distribution of the users' ages. We find that the column bd (age) has a lot of unrealistic **outliers**, ranging from -7000 to 2015. If we exclude the outliers, the ages of most users are between 22 and 30. Additionally, the median age of users who did not churn is slightly older than that of users who did churn.
+
+```{r age(bd)}
+# age(bd) group by churn
+p4 <- kkbox.df %>%
+  mutate(churn = as.factor(is_churn)) %>%
+  ggplot(aes(x = bd, fill = churn)) + 
+  geom_boxplot() + 
+  facet_wrap(~churn) +
+  xlab('age (with obvious and extreme outliers from orig dataset)') + ylab('churn') +
+  ggtitle('Boxplot of Age with Obvious Outliers') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+kkbox.bd <- kkbox.df %>% 
+  filter(bd > 0 & bd < 100)
+
+lo <- quantile(kkbox.bd$bd, 0.25)- (1.5 * IQR(kkbox.bd$bd))
+up <- quantile(kkbox.bd$bd, 0.75)+ (1.5 * IQR(kkbox.bd$bd))
+
+p5 <- kkbox.bd %>%
+  mutate(churn = as.factor(is_churn)) %>%
+  filter(bd > lo & bd < up) %>%
+  ggplot(aes(x = bd, fill = churn)) + 
+  geom_boxplot() + 
+  facet_wrap(~churn) +
+  xlab('age (no obvious and extreme outliers from orig dataset)') + ylab('churn') +
+  ggtitle('Boxplot of Age after Removing Original Outliers') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+p4/p5
+```
+
+The bar plot and line plot below indicate registration information**. Users who did not churn preferred to use method 7 and method 9 to register as a member. Additionally, the number of subscriptions has increased significantly since 2010, and the “non-churn rate” has been getting slightly higher since 2015.
+
+-** Note: As mentioned above in section "II. Data Description", Kaggle did not provide what each Registration Method number actually refers to 
+
+```{r registration}
+# registered method(registered_via) group by churn
+p6 <- kkbox.df %>%
+  mutate(churn = as.factor(is_churn),
+           regis_via = as.factor(registered_via)) %>%
+  ggplot(aes(x = regis_via, fill = churn)) + 
+  geom_bar() + 
+  facet_wrap(~churn) + 
+  xlab('registered method') + ylab('count') +
+  ggtitle('Churn vs. Registered Method') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# registration time(registration_init_time) group by churn
+p7 <- kkbox.df %>%
+  mutate(churn = as.factor(is_churn),
+         reg_time = as.Date(as.factor(registration_init_time), format="%Y%m%d")) %>%
+  ggplot(aes(x = as.Date(reg_time), fill = churn)) + 
+  geom_density(alpha=0.6) + 
+  xlab('registration time') + ylab('count') +
+  ggtitle('Churn vs. Registration Time') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+p6/p7
+```
+
+The bar plot below shows most users use method 36 to method 41 for payment***. Users who did not churn were more likely to use method 36, method 39, method 40, and method 41; users who churn preferred to use method 32, method 38 ,and method 41.  
+
+-*** Note: As mentioned above in section "II. Data Description", Kaggle did not provide what each Payment Method id number actually refers to 
+
+```{r payment_method_id}
+# payment_method_id group by churn
+p9 <- kkbox.df %>%
+  filter(payment_method_id >25) %>%
+  mutate(churn = as.factor(is_churn)) %>%
+  ggplot(aes(x = payment_method_id, fill = churn)) + 
+  geom_bar() + 
+  facet_wrap(~churn) +
+  scale_x_continuous(breaks = seq(3, 41, 1)) +
+  xlab('payment method') + ylab('count') + 
+  ggtitle('Churn vs. Payment Method') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+p9
+```
+
+The table below compares the values for the mean amounts of instances in which churned customers have listened to portions of songs and the values for the mean amounts of instances in which non-churned customers have listened to portions of songs. This table illustrates that churned customers have a higher tendency to play songs for less than 25% of their original length compared to non-churn customers. However, churned customers have a higher tendency to play songs for longer amounts of time compared to non-churn customers. Additionally, churned customers have a higher tendency to play more unique songs and a higher tendency to further listen to songs for longer amounts of time compared to non-churn customers.
+
+```{r}
+aggregate(kkbox.df[, 6:12], by = list(Churn = kkbox.df$is_churn), mean)
+```
+
+From the correlation matrix below, we can find the variable num_50, num_75, num_100, num_unq, payment_plan_days, plan_list_price, and actual_amount_paid are highly correlated, implying this data set may have a **multicollinearity** problem.
+
+```{r corr}
+# correlation matrix for numeric variables
+num_cor <-round(cor(kkbox.df[, c('payment_plan_days', 
+                                 'plan_list_price', 'actual_amount_paid',
+                                 'num_25', 'num_50', 'num_75', 
+                                 'num_985','num_100', 
+                                 'num_unq', 'total_secs')]),2)
+num_cor
+heatmap.2(num_cor, Rowv = FALSE, Colv = FALSE, dendrogram = "none", 
+          trace = 'none', key = FALSE, notecol = "black", 
+          cellnote = num_cor, margins = c(10,10))
+```
+
+## V. Data Preparation & Model Building
+
+Since this is a binary classification project (churn/non-churn), we used the classification algorithms of logistic regression, decision tree classification, and random forest classification to build models that could predict customer churn.
+
+### 1 - Logistic regression
+
+#### Data Preparation
+&nbsp;
+
+The exploratory data analysis indicates that this data set may face the following problems: imbalanced data set, outliers, missing values, and multicollinearity. We deal with these challenges and other issues with the following changes.     
+
+First, we removed unneeded columns 'msno', 'transaction_date', 'membership_expire_date', and 'registration_init_time'. 
+
+```{r}
+kkbox.df2 <- kkbox.df[,-c('transaction_date', 'membership_expire_date', 'registration_init_time')]
+```
+
+Second, the feature bd indicates that user age has outliers as well as implausible values. The bd values range from as low as -7000 to as high as over 2015. However, age should range from 0 to 100 years in the real world. Thus, we remove the age values that are less than 0 or greater than 100. Additionally, we only keep the observations that fall between Q1 − (1.5)(IQR) and Q3 + (1.5)(IQR) and impute these removed values with the median value.
+
+```{r}
+#bd
+kkbox.bd <- kkbox.df2 %>% 
+  filter(bd > 0 & bd < 100)
+
+lo <- quantile(kkbox.bd$bd, 0.25) - (1.5 * IQR(kkbox.bd$bd))
+up <- quantile(kkbox.bd$bd, 0.75) + (1.5 * IQR(kkbox.bd$bd))
+
+kkbox.df2$bd[kkbox.df2$bd <= 0 | kkbox.df2$bd > 100] <- median(kkbox.bd$bd, na.rm=T)
+kkbox.df2$bd[kkbox.df2$bd < lo | kkbox.df2$bd > up] <- median(kkbox.bd$bd, na.rm=T)
+summary(kkbox.df2$bd)
+```
+
+Third, the feature gender has empty values for more than 60% of its values. However, we impute those empty values with “no” since we find users who did not churn are more likely to leave their gender empty from the exploratory data analysis.
+
+```{r}
+kkbox.df2$gender[kkbox.df2$gender == ""] <- "no"
+```
+
+Lastly, we convert the these four predictors 'city', 'gender', 'registered_via', 'payment_method_id into dummy variables and remove the original columns as well as one of the dummy variables from each categorical feature to prevent the issue of exact multicollinearity.
+
+```{r}
+kkbox.df2 <- dummy_cols(kkbox.df2, 
+                      select_columns = c('city', 'gender', 'registered_via', 'payment_method_id'), remove_selected_columns = TRUE)
+kkbox.df2 <- kkbox.df2[,-c('city_1', 'gender_male', 'registered_via_3', 'payment_method_id_3')]
+```
+
+#### Logistic Regression Model
+&nbsp;
+
+Our first algorithm is logistic regression. We split the data set in 80:20 ratio. Thus, 80% of the data will be used for the training set while the other 20% of the data will be used for the test set.
+
+```{r}
+set.seed(42)
+training.index <- sample(c(1:nrow(kkbox.df2)), round(nrow(kkbox.df2) * 0.8, 0))
+train.df <- kkbox.df2[training.index, ]
+test.df <- kkbox.df2[-training.index, ]
+```
+
+Before building a logistic regression model, we handle the imbalanced data set first. In our training data set, churn to non-churn ratio is 1 : 14. The imbalanced data set may result in poor predictive performance, especially for the minority class, so we solve this problem by resampling the training data set. Since there are many observations in our dataset, we choose to do the undersampling method.
+
+```{r}
+# checking Imbalance Data
+prop.table(table(train.df$is_churn))
+
+# undersampling
+train.df_undersampling <- ovun.sample(is_churn ~ ., data = train.df, method = "under", p=0.5)$data
+prop.table(table(train.df_undersampling$is_churn))
+```
+
+
+After solving the imbalanced data problem, we build a logistic regression model with all predictors. We find there is an outlier problem using diagnostic plots.
+
+```{r}
+# Fit the logistic regression model
+logit.reg <- glm(is_churn ~., data = train.df_undersampling, 
+               family = "binomial")
+options(scipen=999)
+summary(logit.reg)
+# detect outliers
+par(mfrow = c(2,2))
+plot(logit.reg)
+#plot(logit.reg, which=4)
+#outlierTest(logit.reg)
+```
+
+After removing outliers based on the cook’s distance, there is no studentized residual falling outside the red dotted lines. 
+```{r}
+train.df_undersampling_nooutliers <- train.df_undersampling[-c(27517, 86631, 28283, 7267, 10231, 13121, 16155, 27651, 3361, 66765, 36331, 5302, 8609, 219, 8619, 9388, 10447),]
+# Fit the logistic regression model w/ outliers
+logit.reg <- glm(is_churn ~., data = train.df_undersampling_nooutliers, 
+               family = "binomial")
+# detect outliers
+par(mfrow = c(2,2))
+plot(logit.reg)
+#plot(logit.reg, which=4)
+```
+
+Second, we test for multicollinearity with Variance Inflation Factors (VIF). Since a VIF exceeding five indicates a high correlation that may be problematic, we drop those predictors with VIF values higher than 5. The table below shows that the VIF values of left preditors are no larger than five.
+
+```{r}
+# detect collinearity(VIF)
+vif(logit.reg) > 5
+# Fit the logistic regression model w/ collinearity
+logit.reg <- glm(is_churn ~ bd+num_25+num_50+num_75+num_985+payment_plan_days+
+                   is_auto_renew+is_cancel+
+                   city_3+city_4+city_5+city_6+city_7+city_8+city_9+city_10+
+                   city_11+city_12+city_13+city_14+city_15+city_16+city_17+
+                   city_18+city_19+city_20+city_21+city_22+gender_female+
+                   gender_no+registered_via_4+registered_via_9+registered_via_13+
+                   payment_method_id_6+payment_method_id_8+payment_method_id_11, 
+                 data = train.df_undersampling_nooutliers, 
+               family = "binomial")
+options(scipen=999)
+summary(logit.reg)
+# detect collinearity again(VIF)
+vif(logit.reg)
+vif(logit.reg) > 5
+```
+
+Third, we plan to use the backward elimination method to select the best performing model by removing those features that do not have a significant effect on the dependent variable. After optimizing the model with the backward elimination method, the AIC value reduces from 64913 to 64904. The predictors “payment_method_id_6”, “payment_method_id_8”, “city_20”, “num_75”, “city_19”, “num_25”, “num_50”, and “gender_female” are removed. After the previous process, we get the best performing model as we can see below.
+
+```{r}
+logit.reg <- step(logit.reg, direction = "backward")
+options(scipen=999)
+#summary(logit.reg)  
+```
+
+In the last step, we will measure if our customer churn predictive model is good. Below is the confusion matrix using a cutoff of 0.5 that we get from the final model. We mainly focus on sensitivity and F1_Score to measure our model performance because a highly sensitive model is useful to predict who will churn. This model achieves 0.6896 sensitivity will identify around 68.96% of churned customers but will miss around 31.04% of churned customers. Additionally, we want to send retention messages to retain all users who would like to churn and try not to bother those who do not plan to churn, so F1-score is a useful measure matrix in this case. 
+
+```{r}
+# Predict the probability (p)
+logit.pred <- predict(logit.reg, test.df, type = "response")
+## Confusion Matrix  w/ default cutoff
+acc <- as.matrix(confusionMatrix(test.df$is_churn, logit.pred>0.5))
+acc
+accuracy <- (acc[1,1]+acc[2,2])/(acc[1,1]+acc[1,2]+acc[2,1]+acc[2,2])
+precision <- precision(test.df$is_churn, logit.pred, threshold = 0.5)
+sensitivity <- sensitivity(test.df$is_churn, logit.pred, threshold = 0.5)
+specificity <- specificity(test.df$is_churn, logit.pred, threshold = 0.5)
+# F1_Score
+predictions <- logit.pred > 0.5
+F1_Score <- F1_Score(test.df$is_churn, as.numeric(predictions))
+# performance_measure - logis
+performance_measure_logis <- rbind(accuracy, precision, sensitivity, specificity, F1_Score)
+colnames(performance_measure_logis) <- "logistic_regression"
+performance_measure_logis
+```
+
+The area under the curve (AUC) tells how much the model can distinguish between classes. AUC of this model is 0.856.
+
+```{r}
+# ROC Curve # Area under the curve(AUC)
+roc <- roc(test.df$is_churn, logit.pred)
+plot.roc(roc, print.auc = TRUE)
+```
+
+From the decile-wise lift chart below, we can find the bars decreasing order from left to right, indicating this is a good prediction model.
+
+```{r}
+# Decile Lift Charts
+gain <- gains(test.df$is_churn, logit.pred)
+barplot(gain$mean.resp / mean(test.df$is_churn), 
+        names.arg = gain$depth, xlab = "Percentile", space = 1.3,
+        ylab = "Mean Response", main = "Decile-wise lift chart", 
+        col = "seagreen", border = NA)
+```
+
+### 2 - Decision Tree Classification
+
+#### Data Preparation
+&nbsp;
+
+Data preparation for the decision tree classification model is the same as before for the logistic regression model.
+
+```{r}
+kkbox.df2$is_auto_renew <- as.factor(kkbox.df2$is_auto_renew)
+kkbox.df2$is_cancel <- as.factor(kkbox.df2$is_cancel)
+kkbox.df2$is_churn <- as.factor(kkbox.df2$is_churn)
+```
+
+#### Decision Tree Classification Model
+&nbsp;
+
+Our second algorithm is decision tree classification. We split the data set in 80:20 ratio. Thus, 80% of the data will be used for the training set while the other 20% of the data will be used for the test set.
+
+```{r}
+set.seed(42)
+training.index <- sample(c(1:nrow(kkbox.df2)), round(nrow(kkbox.df2) * 0.8, 0))
+train.df <- kkbox.df2[training.index, ]
+test.df <- kkbox.df2[-training.index, ]
+```
+
+We also handle the imbalanced data set by using the undersampling method for the decision tree classification model to let the churn to non-churn ratio be closer to 1 : 1 in the training set. As we can see below, the proportion of non-churned customers in the new training set is 0.5007957 while the proportion of churned customers in the new training set is 0.4992043.
+
+```{r}
+train.df_undersampling <- ovun.sample(is_churn ~ ., data = train.df, method = "under", p=0.5)$data
+prop.table(table(train.df_undersampling$is_churn))
+```
+
+From this simple decision tree below, we can see that the five variables that are actually used in this simple tree's construction are: 'payment_plan_days', 'is_cancel', 'is_auto_renew', 'plan_list_price', and 'actual_amount_paid'. These five variables will be used when constructing the recursive partitioning decision tree later. 
+
+```{r}
+set.seed(42)
+options(scipen=999, digits = 10)
+tree.train <- tree(is_churn ~ ., train.df_undersampling)
+summary(tree.train)
+plot(tree.train)
+text(tree.train, pretty = 0)
+```
+
+From the plot below, the optimal value for the number of terminal nodes should be 4.
+
+```{r}
+cv.train <- cv.tree(tree.train)
+plot(cv.train$size,
+cv.train$dev,type = 'b') 
+```
+
+Pruning the simple decision tree from above and setting the number of terminal nodes to be 4 because of the plot above. The resulting pruned simple decision is below with 4 terminal nodes.
+
+```{r}
+prune.train <- prune.tree(tree.train, best = 4)
+plot(prune.train)
+text(prune.train, pretty = 0)
+```
+
+Below is the recursive partitioning decision tree with the five variables of 'payment_plan_days', 'is_cancel', 'is_auto_renew', 'plan_list_price', and 'actual_amount_paid'. As mentioned above, these five variables were the only variables that were used in the construction of the simple decision tree above. Additionally, the rules for determining customer churn are below too.
+
+```{r}
+options(digits = 7)
+set.seed(42)
+cv.ct <- rpart(is_churn ~ payment_plan_days + is_cancel + is_auto_renew + plan_list_price + actual_amount_paid, data = train.df_undersampling, method = "class", cp = 0.00001, minsplit = 5, xval = 5)
+prp(cv.ct, type = 1, extra = 1, under = TRUE, roundint = FALSE, 
+    split.font = 2, varlen = -10, box.palette = "BuOr")
+rpart.rules(cv.ct, cover = TRUE)
+```
+
+```{r}
+set.seed(42)
+predictions <- predict(cv.ct, 
+                      newdata = test.df, 
+                      type = "class")
+```
+
+Below is the confusion matrix for the recursive partitioning decision tree classification model. Additionally, below is also a table that describes the different metrics for the recursive partitioning decision tree classification model. This table depicts the metrics of accuracy, precision, sensitivity, specificity, and F1_Score.
+
+```{r}
+matrix <- table(predictions, test.df$is_churn)
+matrix
+sensitivity <- Sensitivity(test.df$is_churn, predictions, positive = 1)
+specificity <- Specificity(test.df$is_churn, predictions, positive = 1)
+accuracy <- Accuracy(test.df$is_churn, predictions)
+precision <- precision(as.numeric(test.df$is_churn), as.numeric(predictions))
+F1_Score <- F1_Score(as.numeric(test.df$is_churn), as.numeric(predictions))
+# performance_measure - decision tree
+performance_measure_tree <- rbind(accuracy, precision, sensitivity, specificity, F1_Score)
+colnames(performance_measure_tree) <- "decision_tree"
+performance_measure_tree
+```
+
+Area under the curve (AUC) of the recursive partitioning decision tree classification model is 0.811.
+
+```{r}
+r1 <- roc(as.numeric(test.df$is_churn), as.numeric(predictions))
+# Area Under the Curve (AUC)
+plot.roc(r1, print.auc = TRUE)
+```
+
+### 3-Random Forest Classification
+
+#### Data Preparation
+&nbsp;
+
+Our last algorithm that we used is random forest classification. Data preparation for the random forest classification model is the same as before for the 
+logistic regression model.
+
+```{r}
+kkbox.df2$is_auto_renew <- as.factor(kkbox.df2$is_auto_renew)
+kkbox.df2$is_cancel <- as.factor(kkbox.df2$is_cancel)
+kkbox.df2$is_churn <- as.factor(kkbox.df2$is_churn)
+```
+
+#### Random Forest Classification Model
+&nbsp;
+
+We split the data set in 80:20 ratio. Thus, 80% of the data will be used for the training set while the other 20% of the data will be used for the test set.
+
+```{r}
+set.seed(42)
+training.index <- sample(c(1:nrow(kkbox.df2)), round(nrow(kkbox.df2) * 0.8, 0))
+train.df <- kkbox.df2[training.index, ]
+test.df <- kkbox.df2[-training.index, ]
+```
+
+We also handle the imbalanced data set by using the undersampling method for the random forest classification model to let the churn to non-churn ratio be closer to 1 : 1 in the training set. As we can see below, the proportion of non-churned customers in the new training set is 0.5007957 while the proportion of churned customers in the new training set is 0.4992043.
+
+```{r}
+train.df_undersampling <- ovun.sample(is_churn ~ ., data = train.df, method = "under", p=0.5)$data
+prop.table(table(train.df_undersampling$is_churn))
+```
+
+The top 6 variables that are the most important predictors for predicting customer churn in the Random Forest model, in order from most important to least important, are 'is_cancel', 'actual_amount_paid', 'plan_list_price', 'payment_plan_days', 'is_auto_renew', and 'num_unq'.
+
+```{r}
+set.seed(42)
+options(scipen=999, digits = 10)
+rf_model <- randomForest(is_churn ~ .,
+                        data = train.df_undersampling,
+                        ntree = 25)
+importance <- importance(rf_model)
+head(sort(importance[,1], decreasing = T))
+barplot(head(sort(importance[,1], decreasing = T)), las = 3, cex.axis = 1, cex.names = 0.5325, main = 'Important Features for Random Forest Classification Model')
+
+predictions <- predict(rf_model, newdata = test.df)
+```
+
+Below is the confusion matrix for the random forest classification model. Additionally, below is also a table that describes the different metrics for the random forest classification model. This table depicts the metrics of accuracy, precision, sensitivity, specificity, and F1_Score.
+
+```{r}
+matrix <- table(predictions, test.df$is_churn)
+matrix
+sensitivity <- Sensitivity(test.df$is_churn, predictions, positive = 1)
+specificity <- Specificity(test.df$is_churn, predictions, positive = 1)
+accuracy <- Accuracy(test.df$is_churn, predictions)
+precision <- precision(as.numeric(test.df$is_churn), as.numeric(predictions))
+F1_Score <- F1_Score(as.numeric(test.df$is_churn), as.numeric(predictions))
+# performance_measure - forest
+performance_measure_forest <- rbind(accuracy, precision, sensitivity, specificity, F1_Score)
+colnames(performance_measure_forest) <- "random_forest"
+performance_measure_forest
+```
+
+Area under the curve (AUC) of the random forest classification model is 0.810.
+
+```{r}
+r2 <- roc(as.numeric(test.df$is_churn), as.numeric(predictions))
+# Area Under the Curve (AUC)
+plot.roc(r2, print.auc = TRUE)
+```
+
+## VI. Comparing Algorithms 
+
+Below is our performance comparison matrix from the three machine learning models that we built.
+We are choosing the best model based off the sensitivity, F1_Score, and AUC metrics. Since we want to identify all of the churned customers as precisely as possible, and the F1_Score and AUC of the three models are all good, we are mainly focusing on the sensitivity measure for our model performance because a highly sensitive model is useful to effectively identify and predict the customers who will churn. Therefore, we are choosing the random forest classification model as our best model because the random forest classification model had the highest sensitivity value among the 3 models with a sensitivity value of 0.724. The sensitivity value of 0.724 means this model will identify around 72% of churned customers but will miss around 28% of churned customers. 
+
+```{r}
+auc <- c(0.856, 0.811, 0.810)
+performance_measure <- cbind(performance_measure_logis, 
+                             performance_measure_tree, 
+                             performance_measure_forest)
+performance_measure <-rbind(performance_measure, auc)
+round(performance_measure,3)
+```
+
+## VII. Conclusion
+
+From the results of the random forest classification model, the top five most influential variables for predicting customer churn are 'is_cancel', 'actual_amount_paid', 'plan_list_price', 'payment_plan_days', and 'is_auto_renew'. Below are five insights that we gained from this random forest classification model:
+
+1. Customers who canceled their memberships in the transactions are more likely to churn than customers who did not cancel their memberships in the transactions. 
+2. Customers who have higher actual membership payments are more likely to churn than customers who have lower actual membership payments.
+3. Customers who have higher membership plan payments are more likely to churn than customers who have lower membership plan payments. 
+4. Customers who have longer lengths of membership plans are more likely to churn than customers who have shorter lengths of membership plans. 
+5. Customers whose membership plans are auto-renew are more likely to churn than customers whose membership plans are not auto-renew.  
+
+The customers who resemble the criteria above are the ones who seem more likely to churn. Therefore, we highly recommend KKBox to develop some related marketing strategies based on these points listed above to retain the customers who seem more likely to churn. KKBox can use this analysis above to see which customers closely resemble these characteristics above to send retention messages, coupons, discounts, promo deals, etc. to these customers who fit the criteria above to try and convince/persuade these customers to continue their subscriptions and not churn. 
+
+```{r}
+barplot(head(sort(importance[,1], decreasing = T)), las = 3, cex.axis = 1, cex.names = 0.5325, main = 'Important Features for Random Forest Classification Model')
+```
+
+## VIII. References
+
+#### Website
+1. Datasets source from Kaggle:     
+https://www.kaggle.com/c/kkbox-churn-prediction-challenge/data    
+2. KKBox help center:     
+https://help.kkbox.com/tw/en/billing/cancel-change/1338?p=kkbox  
