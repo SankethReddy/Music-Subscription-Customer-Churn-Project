@@ -9,5 +9,8 @@ customers consistently. Therefore, the goal is to help KKBox predict whether a s
 his/her subscription expires.
 
 R was used to perform data cleansing, exploratory data analysis, and data preprocessing. Additionally,
-R was used to develop a Logistic Regression model, Decision Tree Classification model, and a Random Forest
-Classification model.
+R was used to develop a Logistic Regression model, a Decision Tree Classification model, and a Random Forest
+Classification model to predict the customer churn.
+
+Datasets source from Kaggle:     
+https://www.kaggle.com/c/kkbox-churn-prediction-challenge/data
